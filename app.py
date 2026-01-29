@@ -87,7 +87,8 @@ client = ApifyClient(APIFY_TOKEN)
 # DETECT BOOKING.COM SCRAPER ACTOR
 # -----------------------------
 try:
-    actors_list = list(client.actors().list())
+    actors_page = client.actors().list()      # returns ListPage object
+    actors_list = actors_page.items            # fix applied: get list of actor dicts
 except Exception as e:
     st.error(f"Error listing actors: {e}")
     st.stop()
@@ -161,6 +162,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
