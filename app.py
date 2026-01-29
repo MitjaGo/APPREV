@@ -3,57 +3,67 @@ import pandas as pd
 from apify_client import ApifyClient
 from datetime import date
 
-# ---------------------------------------
+# -----------------------------
 # SECRETS
-# ---------------------------------------
+# -----------------------------
 APIFY_TOKEN = st.secrets["general"]["APIFY_TOKEN"]
 GOOGLE_SHEET_ID = st.secrets["general"]["GOOGLE_SHEET_ID"]
 
-# ---------------------------------------
+# -----------------------------
 # CONFIG
-# ---------------------------------------
+# -----------------------------
 SHEET_NAME = "competitors"
-SHEET_URL = (
-    f"https://docs.google.com/spreadsheets/d/"
-    f"{GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
-)
-
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 APIFY_ACTOR = "voyager/fast-booking-scraper"
 
-ROOM_MAPPING = {
-    "double": {"adults": 2, "children": 0},
-    "triple": {"adults": 3, "children": 0},
-    "family": {"adults": 2, "children": 2},
-    "unit": {"adults": 1, "children": 0},
-    "mobile": {"adults": 1, "children": 0},
+# Group mapping
+GROUP_MAPPING = {
+    1: "Hotel Convent",
+    2: "Villas",
+    3: "Villas with Balcony",
+    4: "Olive Suites",
+    5: "MH Premium",
+    6: "MH Standard",
+    7: "Apartments Adria"
 }
 
-# ---------------------------------------
-# UI
-# ---------------------------------------
+# -----------------------------
+# STREAMLIT UI
+# -----------------------------
 st.set_page_config(page_title="Booking.com Price Monitor", layout="wide")
 st.title("📊 Booking.com Group Price Monitor")
 
-# ---------------------------------------
+# -----------------------------
 # LOAD GOOGLE SHEET
-# ---------------------------------------
+# -----------------------------
 df = pd.read_csv(SHEET_URL)
 
+# Normalize column names
 df.columns = df.columns.str.lower().str.strip()
-df["room_type"] = df["room_type"].astype(str).str.lower().str.strip()
-df["property_category"] = df["property_category"].astype(str).str.lower().str.strip()
-df["booking_url"] = df["booking_url"].astype(str).str.strip()
+required_columns = ["group","unit_name","nr_persons","role","property_name","booking_url","property_category"]
+for col in required_columns:
+    if col not in df.columns:
+        st.error(f"Column missing in Google Sheet: {col}")
+        st.stop()
 
-df = df.dropna(subset=["group", "booking_url", "property_category"])
+# Strip strings
+df["booking_url"] = df["booking_url"].astype(str).str.strip()
+df["property_category"] = df["property_category"].astype(str).str.lower().str.strip()
+df["nr_persons"] = pd.to_numeric(df["nr_persons"], errors="coerce")
+df = df.dropna(subset=["group", "booking_url", "property_category", "nr_persons"])
 df = df[df["booking_url"].str.startswith("http")]
 
-groups = sorted(df["group"].unique())
+# Select group
+available_groups = [num for num in GROUP_MAPPING if num in df["group"].unique()]
+group_selected_number = st.selectbox(
+    "Select group",
+    available_groups,
+    format_func=lambda x: GROUP_MAPPING[x]
+)
 
-# ---------------------------------------
-# CONTROLS
-# ---------------------------------------
-group_selected = st.selectbox("Select group", groups)
+group_df = df[df["group"] == group_selected_number]
 
+# Date picker
 col1, col2 = st.columns(2)
 with col1:
     check_in = st.date_input("Check-in", date.today())
@@ -65,31 +75,24 @@ if check_out <= check_in:
     st.stop()
 
 nights = (check_out - check_in).days
-group_df = df[df["group"] == group_selected]
-
 client = ApifyClient(APIFY_TOKEN)
 
-# ---------------------------------------
+# -----------------------------
 # FETCH PRICES
-# ---------------------------------------
+# -----------------------------
 if st.button("🔍 Fetch prices"):
     results = []
 
     with st.spinner("Fetching prices from Booking.com (may take a few minutes)…"):
         for _, row in group_df.iterrows():
-            category = row["property_category"]
-            room_type = row["room_type"]
-
-            # Occupancy logic
-            if category in ["apartment", "mobile"]:
+            # Determine adults/children based on category
+            if row["property_category"] in ["apartment","mobile"]:
                 adults = 1
                 children = 0
-            else:
-                mapping = ROOM_MAPPING.get(room_type, ROOM_MAPPING["double"])
-                adults = mapping["adults"]
-                children = mapping["children"]
+            else:  # hotel
+                adults = int(row["nr_persons"])
+                children = 0
 
-            # ✅ Correct input for voyager/fast-booking-scraper
             run_input = {
                 "hotelUrls": [row["booking_url"]],
                 "checkIn": check_in.isoformat(),
@@ -108,7 +111,7 @@ if st.button("🔍 Fetch prices"):
                 dataset = client.dataset(run["defaultDatasetId"])
                 items = list(dataset.iterate_items())
 
-                # ✅ Extract price from rooms[0].price.amount
+                # Extract price per night from rooms[0].price.amount
                 if items and "rooms" in items[0] and items[0]["rooms"]:
                     total_price = items[0]["rooms"][0]["price"]["amount"]
                     price_per_night = round(total_price / nights, 2)
@@ -121,13 +124,14 @@ if st.button("🔍 Fetch prices"):
             results.append({
                 "Property": row["property_name"],
                 "Role": row["role"],
-                "Room type": room_type,
-                "Category": category,
+                "Category": row["property_category"],
+                "Nr persons": adults,
                 "Price / night (€)": price_per_night
             })
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
