@@ -7,107 +7,122 @@ import time
 # CONFIGURATION
 # ------------------------------
 
-APIFY_TOKEN = "<YOUR_API_TOKEN>"
-APIFY_ACTOR_ID = "QGcJvQyG9NqMKTYPH"  # Full Booking Scraper
-GOOGLE_SHEET_URL = "<YOUR_GOOGLE_SHEET_CSV_EXPORT_URL>"  # CSV export URL
+GOOGLE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRJvN35Doqax_qlu0A26R-czbP7oXh6yjaAFs8uvhknllW_A4rFa6t2rPrxEMs8Lp_KmIKnRAYqrwjA/pub?gid=0&single=true&output=csv"
+APIFY_ACTOR_ID = "QGcJvQyG9NqMKTYPH"  # Full Booking Scraper Actor
+APIFY_API_TOKEN = "<YOUR_API_TOKEN>"
+
+# ------------------------------
+# FUNCTIONS
+# ------------------------------
+
+@st.cache_data(show_spinner=True)
+def load_sheet(csv_url):
+    try:
+        df = pd.read_csv(csv_url)
+        return df
+    except Exception as e:
+        st.error(f"Error loading Google Sheet: {e}")
+        return pd.DataFrame()
+
+def run_apify_scraper(hotel_url, adults=2, children=0, rooms=1):
+    client = ApifyClient(APIFY_API_TOKEN)
+    input_data = {
+        "startUrls": [{"url": hotel_url}],
+        "adults": adults,
+        "children": children,
+        "rooms": rooms,
+        "currency": "EUR",
+        "language": "en-gb",
+    }
+    try:
+        run = client.actor(APIFY_ACTOR_ID).call(run_input=input_data)
+        dataset_id = run["defaultDatasetId"]
+        items = list(client.dataset(dataset_id).iterate_items())
+        return items
+    except Exception as e:
+        st.warning(f"Error running Apify scraper for {hotel_url}: {e}")
+        return []
+
+def extract_price(item):
+    """Safely extract price info from nested Apify output"""
+    try:
+        # First try average price per night
+        if "b_avg_price_per_night_eur" in item and item["b_avg_price_per_night_eur"]:
+            return float(item["b_avg_price_per_night_eur"])
+        # Then try main price
+        elif "b_price" in item and item["b_price"]:
+            # remove € or other symbols
+            price_str = str(item["b_price"]).replace("€", "").replace(",", "").strip()
+            return float(price_str)
+        # Then try nested room options
+        elif "roomOptions" in item and item["roomOptions"]:
+            for option in item["roomOptions"]:
+                if "b_avg_price_per_night_eur" in option:
+                    return float(option["b_avg_price_per_night_eur"])
+                if "b_price" in option and option["b_price"]:
+                    price_str = str(option["b_price"]).replace("€", "").replace(",", "").strip()
+                    return float(price_str)
+        return None
+    except Exception:
+        return None
 
 # ------------------------------
 # STREAMLIT APP
 # ------------------------------
 
-st.set_page_config(page_title="Booking.com Price Monitor", layout="wide")
-st.title("📊 Booking.com Group Price Monitor")
+st.set_page_config(page_title="Booking Price Monitor", layout="wide")
+st.title("📊 Booking.com Price Monitor")
 
-# Load Google Sheet
-@st.cache_data
-def load_sheet(url):
-    df = pd.read_csv(url)
-    return df
+# Load hotel list from Google Sheet
+df_hotels = load_sheet(GOOGLE_SHEET_CSV)
 
-df = load_sheet(GOOGLE_SHEET_URL)
+if df_hotels.empty:
+    st.stop()
 
-# Show initial data
-st.subheader("Hotel List")
-st.dataframe(df)
+# User input for search
+st.sidebar.header("Scraper Options")
+adults = st.sidebar.number_input("Adults", min_value=1, max_value=10, value=2)
+children = st.sidebar.number_input("Children", min_value=0, max_value=5, value=0)
+rooms = st.sidebar.number_input("Rooms", min_value=1, max_value=5, value=1)
 
-# Initialize Apify client
-client = ApifyClient(APIFY_TOKEN)
-
-# Button to run scraper
-if st.button("Fetch Prices from Booking.com"):
-
-    st.info("Running Apify actor... this may take a few minutes ⏳")
-    
-    # Iterate through each hotel
+if st.sidebar.button("Fetch Prices"):
     results = []
-    for idx, row in df.iterrows():
-        hotel_name = row["hotel_name"]
-        hotel_type = row.get("property_category", "hotel")  # hotel, apartment, mobilehome
-        adults = row.get("adults", 2)
-        children = row.get("children", 0)
-        rooms = row.get("rooms", 1)
 
-        # Prepare input for Apify actor
-        actor_input = {
-            "startUrls": [{"url": row.get("hotel_url")}],  # must be full URL of hotel
-            "maxItems": 1,
-            "adults": adults,
-            "children": children,
-            "rooms": rooms,
-            "currency": "EUR",
-            "language": "en-gb"
-        }
+    progress_bar = st.progress(0)
+    total = len(df_hotels)
 
-        try:
-            # Run actor
-            run = client.actor(APIFY_ACTOR_ID).call(run_input=actor_input)
-            dataset_id = run["defaultDatasetId"]
-            
-            # Wait a few seconds for dataset to populate
-            time.sleep(2)
-            
-            # Fetch dataset items
-            items = list(client.dataset(dataset_id).iterate_items())
-            
-            if not items:
-                results.append({"hotel_name": hotel_name, "price_per_night": "N/A"})
-                st.warning(f"No data found for {hotel_name}")
-                continue
+    for idx, row in df_hotels.iterrows():
+        hotel_name = row.get("Property Name") or row.get("hotel_name") or "Unknown"
+        hotel_url = row.get("Booking URL") or row.get("url") or ""
 
-            # Safe nested price extraction
-            first_item = items[0]
-            price_per_night = None
-            room_options = first_item.get("roomOptions", [])
-            
-            for room in room_options:
-                stays = room.get("b_stay_prices", [])
-                for stay in stays:
-                    # Try multiple price fields
-                    p = stay.get("b_price_per_night") or stay.get("b_price") or stay.get("b_raw_price")
-                    if p:
-                        if isinstance(p, str):
-                            p = p.replace("€", "").replace("\xa0","").replace(",", "").strip()
-                        try:
-                            price_per_night = round(float(p), 2)
-                            break
-                        except:
-                            continue
-                if price_per_night:
+        if not hotel_url:
+            st.warning(f"No URL found for {hotel_name}")
+            continue
+
+        st.info(f"Fetching prices for {hotel_name}...")
+        items = run_apify_scraper(hotel_url, adults=adults, children=children, rooms=rooms)
+
+        price = None
+        if items:
+            # Apify returns a list of dicts
+            for item in items:
+                price = extract_price(item)
+                if price:
                     break
 
-            if not price_per_night:
-                price_per_night = "N/A"
+        results.append({
+            "Hotel": hotel_name,
+            "Price per Night (€)": price if price else "N/A",
+        })
 
-            results.append({"hotel_name": hotel_name, "price_per_night": price_per_night})
-
-        except Exception as e:
-            results.append({"hotel_name": hotel_name, "price_per_night": "Error"})
-            st.error(f"Error fetching {hotel_name}: {e}")
+        progress_bar.progress((idx + 1) / total)
+        time.sleep(0.5)  # avoid hitting rate limits
 
     # Display results
-    st.subheader("Prices per Night")
-    results_df = pd.DataFrame(results)
-    st.dataframe(results_df)
+    st.subheader("Scraping Results")
+    df_results = pd.DataFrame(results)
+    st.dataframe(df_results)
+
 
 
 
