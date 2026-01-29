@@ -87,8 +87,8 @@ client = ApifyClient(APIFY_TOKEN)
 # DETECT BOOKING.COM SCRAPER ACTOR
 # -----------------------------
 try:
-    actors_page = client.actors().list()      # returns ListPage object
-    actors_list = actors_page.items            # fix applied: get list of actor dicts
+    actors_page = client.actors().list()
+    actors_list = actors_page.items
 except Exception as e:
     st.error(f"Error listing actors: {e}")
     st.stop()
@@ -136,20 +136,26 @@ if st.button("🔍 Fetch prices"):
                 "headless": True
             }
 
+            price_per_night = None
+
             try:
                 run = client.actor(APIFY_ACTOR).call(run_input=run_input)
                 dataset = client.dataset(run["defaultDatasetId"])
                 items = list(dataset.iterate_items())
 
-                # Extract price per night
-                if items and "rooms" in items[0] and items[0]["rooms"]:
-                    total_price = items[0]["rooms"][0]["price"]["amount"]
-                    price_per_night = round(total_price / nights, 2)
-                else:
-                    price_per_night = None
+                # -----------------------------
+                # SAFE PRICE EXTRACTION
+                # -----------------------------
+                if items and len(items) > 0:
+                    first_item = items[0]
+                    rooms = first_item.get("rooms")
+                    if rooms and len(rooms) > 0:
+                        price_info = rooms[0].get("price")
+                        if price_info and "amount" in price_info:
+                            total_price = price_info["amount"]
+                            price_per_night = round(total_price / nights, 2)
 
             except Exception as e:
-                price_per_night = None
                 st.write(f"Error fetching {row['property_name']}: {e}")
 
             results.append({
@@ -162,6 +168,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
