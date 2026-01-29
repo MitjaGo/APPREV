@@ -144,16 +144,24 @@ if st.button("🔍 Fetch prices"):
                 items = list(dataset.iterate_items())
 
                 # -----------------------------
-                # SAFE PRICE EXTRACTION
+                # SAFE GUEST-MATCHING PRICE EXTRACTION
                 # -----------------------------
                 if items and len(items) > 0:
                     first_item = items[0]
-                    rooms = first_item.get("rooms")
-                    if rooms and len(rooms) > 0:
-                        price_info = rooms[0].get("price")
+                    rooms = first_item.get("rooms", [])
+                    for room in rooms:
+                        guests = room.get("guests", 1)
+                        price_info = room.get("price")
                         if price_info and "amount" in price_info:
-                            total_price = price_info["amount"]
-                            price_per_night = round(total_price / nights, 2)
+                            if row["property_category"] in ["apartment","mobile"]:
+                                # For apartments/mobile, take first price
+                                total_price = price_info["amount"]
+                                price_per_night = round(total_price / nights, 2)
+                                break
+                            elif guests == adults:
+                                total_price = price_info["amount"]
+                                price_per_night = round(total_price / nights, 2)
+                                break
 
             except Exception as e:
                 st.write(f"Error fetching {row['property_name']}: {e}")
@@ -168,6 +176,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
