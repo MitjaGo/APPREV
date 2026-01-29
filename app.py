@@ -3,15 +3,15 @@ import pandas as pd
 from apify_client import ApifyClient
 from datetime import date
 
-# ----------------------------------------------------
+# ---------------------------------------
 # SECRETS
-# ----------------------------------------------------
+# ---------------------------------------
 APIFY_TOKEN = st.secrets["general"]["APIFY_TOKEN"]
 GOOGLE_SHEET_ID = st.secrets["general"]["GOOGLE_SHEET_ID"]
 
-# ----------------------------------------------------
+# ---------------------------------------
 # CONFIG
-# ----------------------------------------------------
+# ---------------------------------------
 SHEET_NAME = "competitors"
 SHEET_URL = (
     f"https://docs.google.com/spreadsheets/d/"
@@ -28,15 +28,15 @@ ROOM_MAPPING = {
     "mobile": {"adults": 1, "children": 0},
 }
 
-# ----------------------------------------------------
+# ---------------------------------------
 # UI
-# ----------------------------------------------------
+# ---------------------------------------
 st.set_page_config(page_title="Booking.com Price Monitor", layout="wide")
 st.title("📊 Booking.com Group Price Monitor")
 
-# ----------------------------------------------------
+# ---------------------------------------
 # LOAD GOOGLE SHEET
-# ----------------------------------------------------
+# ---------------------------------------
 df = pd.read_csv(SHEET_URL)
 
 df.columns = df.columns.str.lower().str.strip()
@@ -49,9 +49,9 @@ df = df[df["booking_url"].str.startswith("http")]
 
 groups = sorted(df["group"].unique())
 
-# ----------------------------------------------------
+# ---------------------------------------
 # CONTROLS
-# ----------------------------------------------------
+# ---------------------------------------
 group_selected = st.selectbox("Select group", groups)
 
 col1, col2 = st.columns(2)
@@ -69,13 +69,13 @@ group_df = df[df["group"] == group_selected]
 
 client = ApifyClient(APIFY_TOKEN)
 
-# ----------------------------------------------------
+# ---------------------------------------
 # FETCH PRICES
-# ----------------------------------------------------
+# ---------------------------------------
 if st.button("🔍 Fetch prices"):
     results = []
 
-    with st.spinner("Fetching prices from Booking.com (this may take a few minutes)…"):
+    with st.spinner("Fetching prices from Booking.com (may take a few minutes)…"):
         for _, row in group_df.iterrows():
             category = row["property_category"]
             room_type = row["room_type"]
@@ -89,6 +89,7 @@ if st.button("🔍 Fetch prices"):
                 adults = mapping["adults"]
                 children = mapping["children"]
 
+            # ✅ Correct input for voyager/fast-booking-scraper
             run_input = {
                 "hotelUrls": [row["booking_url"]],
                 "checkIn": check_in.isoformat(),
@@ -97,7 +98,9 @@ if st.button("🔍 Fetch prices"):
                 "children": children,
                 "rooms": 1,
                 "currency": "EUR",
-                "language": "en-gb"
+                "language": "en-gb",
+                "proxyConfiguration": {"useApifyProxy": True},
+                "headless": True
             }
 
             try:
@@ -105,14 +108,14 @@ if st.button("🔍 Fetch prices"):
                 dataset = client.dataset(run["defaultDatasetId"])
                 items = list(dataset.iterate_items())
 
-                # ✅ CORRECT PRICE EXTRACTION
+                # ✅ Extract price from rooms[0].price.amount
                 if items and "rooms" in items[0] and items[0]["rooms"]:
                     total_price = items[0]["rooms"][0]["price"]["amount"]
                     price_per_night = round(total_price / nights, 2)
                 else:
                     price_per_night = None
 
-            except Exception:
+            except Exception as e:
                 price_per_night = None
 
             results.append({
@@ -125,6 +128,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
