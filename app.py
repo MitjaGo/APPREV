@@ -83,9 +83,14 @@ client = ApifyClient(APIFY_TOKEN)
 # -----------------------------
 # DETECT BOOKING.COM SCRAPER ACTOR
 # -----------------------------
-actors = client.actors().list()["items"]
+try:
+    actors_list = list(client.actors().list())  # fix applied: cast to list
+except Exception as e:
+    st.error(f"Error listing actors: {e}")
+    st.stop()
+
 booking_actor_id = None
-for actor in actors:
+for actor in actors_list:
     if "booking" in actor["name"].lower() and "scraper" in actor["name"].lower():
         booking_actor_id = actor["id"]
         break
@@ -139,20 +144,6 @@ if st.button("🔍 Fetch prices"):
                 else:
                     price_per_night = None
 
-            except Exception as e:
-                price_per_night = None
-                st.write(f"Error fetching {row['property_name']}: {e}")
-
-            results.append({
-                "Property": row["property_name"],
-                "Role": row["role"],
-                "Category": row["property_category"],
-                "Nr persons": adults,
-                "Price / night (€)": price_per_night
-            })
-
-    st.success("Finished")
-    st.dataframe(pd.DataFrame(results), use_container_width=True)
 
 
 
