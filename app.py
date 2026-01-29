@@ -14,7 +14,7 @@ GOOGLE_SHEET_ID = st.secrets["general"]["GOOGLE_SHEET_ID"]
 # -----------------------------
 SHEET_NAME = "competitors"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
-APIFY_ACTOR = "voyager/fast-booking-scraper"
+APIFY_ACTOR = "apify/booking-scraper"  # <-- Full Booking Scraper actor
 
 # Group mapping 1-7
 GROUP_MAPPING = {
@@ -116,6 +116,7 @@ if st.button("🔍 Fetch prices"):
                 dataset = client.dataset(run["defaultDatasetId"])
                 items = list(dataset.iterate_items())
 
+                # Extract price per night from rooms[0].price.amount
                 if items and "rooms" in items[0] and items[0]["rooms"]:
                     total_price = items[0]["rooms"][0]["price"]["amount"]
                     price_per_night = round(total_price / nights, 2)
@@ -136,6 +137,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
