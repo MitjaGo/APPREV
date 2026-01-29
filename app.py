@@ -35,7 +35,11 @@ st.title("📊 Booking.com Group Price Monitor")
 # -----------------------------
 # LOAD GOOGLE SHEET
 # -----------------------------
-df = pd.read_csv(SHEET_URL)
+try:
+    df = pd.read_csv(SHEET_URL)
+except Exception as e:
+    st.error(f"Error loading Google Sheet: {e}")
+    st.stop()
 
 # Normalize column names
 df.columns = df.columns.str.lower().str.strip()
@@ -61,7 +65,6 @@ group_selected_number = st.selectbox(
     available_groups,
     format_func=lambda x: GROUP_MAPPING[x]
 )
-
 group_df = df[df["group"] == group_selected_number]
 
 # -----------------------------
@@ -84,7 +87,7 @@ client = ApifyClient(APIFY_TOKEN)
 # DETECT BOOKING.COM SCRAPER ACTOR
 # -----------------------------
 try:
-    actors_list = list(client.actors().list())  # fix applied: cast to list
+    actors_list = list(client.actors().list())
 except Exception as e:
     st.error(f"Error listing actors: {e}")
     st.stop()
@@ -143,6 +146,22 @@ if st.button("🔍 Fetch prices"):
                     price_per_night = round(total_price / nights, 2)
                 else:
                     price_per_night = None
+
+            except Exception as e:
+                price_per_night = None
+                st.write(f"Error fetching {row['property_name']}: {e}")
+
+            results.append({
+                "Property": row["property_name"],
+                "Role": row["role"],
+                "Category": row["property_category"],
+                "Nr persons": adults,
+                "Price / night (€)": price_per_night
+            })
+
+    st.success("Finished")
+    st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
