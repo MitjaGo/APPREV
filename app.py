@@ -16,7 +16,7 @@ SHEET_NAME = "competitors"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 APIFY_ACTOR = "voyager/fast-booking-scraper"
 
-# Group mapping
+# Group mapping 1-7
 GROUP_MAPPING = {
     1: "Hotel Convent",
     2: "Villas",
@@ -46,14 +46,16 @@ for col in required_columns:
         st.error(f"Column missing in Google Sheet: {col}")
         st.stop()
 
-# Strip strings
+# Strip strings and clean
 df["booking_url"] = df["booking_url"].astype(str).str.strip()
 df["property_category"] = df["property_category"].astype(str).str.lower().str.strip()
 df["nr_persons"] = pd.to_numeric(df["nr_persons"], errors="coerce")
 df = df.dropna(subset=["group", "booking_url", "property_category", "nr_persons"])
 df = df[df["booking_url"].str.startswith("http")]
 
-# Select group
+# -----------------------------
+# STREAMLIT SELECT GROUP
+# -----------------------------
 available_groups = [num for num in GROUP_MAPPING if num in df["group"].unique()]
 group_selected_number = st.selectbox(
     "Select group",
@@ -83,7 +85,7 @@ client = ApifyClient(APIFY_TOKEN)
 if st.button("🔍 Fetch prices"):
     results = []
 
-    with st.spinner("Fetching prices from Booking.com (may take a few minutes)…"):
+    with st.spinner("Fetching prices from Booking.com (this may take a few minutes)…"):
         for _, row in group_df.iterrows():
             # Determine adults/children based on category
             if row["property_category"] in ["apartment","mobile"]:
@@ -93,6 +95,7 @@ if st.button("🔍 Fetch prices"):
                 adults = int(row["nr_persons"])
                 children = 0
 
+            # Prepare correct actor input
             run_input = {
                 "hotelUrls": [row["booking_url"]],
                 "checkIn": check_in.isoformat(),
@@ -120,6 +123,7 @@ if st.button("🔍 Fetch prices"):
 
             except Exception as e:
                 price_per_night = None
+                st.write(f"Error fetching {row['property_name']}: {e}")
 
             results.append({
                 "Property": row["property_name"],
@@ -131,6 +135,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
