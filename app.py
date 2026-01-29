@@ -14,7 +14,6 @@ GOOGLE_SHEET_ID = st.secrets["general"]["GOOGLE_SHEET_ID"]
 # -----------------------------
 SHEET_NAME = "competitors"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
-APIFY_ACTOR = "apify/booking-scraper"  # <-- Full Booking Scraper actor
 
 # Group mapping 1-7
 GROUP_MAPPING = {
@@ -82,6 +81,23 @@ nights = (check_out - check_in).days
 client = ApifyClient(APIFY_TOKEN)
 
 # -----------------------------
+# DETECT BOOKING.COM SCRAPER ACTOR
+# -----------------------------
+actors = client.actors().list()["items"]
+booking_actor_id = None
+for actor in actors:
+    if "booking" in actor["name"].lower() and "scraper" in actor["name"].lower():
+        booking_actor_id = actor["id"]
+        break
+
+if not booking_actor_id:
+    st.error("No Booking.com scraper actor found in your account.")
+    st.stop()
+
+APIFY_ACTOR = booking_actor_id
+st.info(f"Using Apify actor: {APIFY_ACTOR}")
+
+# -----------------------------
 # FETCH PRICES
 # -----------------------------
 if st.button("🔍 Fetch prices"):
@@ -97,7 +113,7 @@ if st.button("🔍 Fetch prices"):
                 adults = int(row["nr_persons"])
                 children = 0
 
-            # Correct actor input using startUrls
+            # Actor input using startUrls
             run_input = {
                 "startUrls": [{"url": row["booking_url"], "uniqueKey": row["property_name"]}],
                 "checkIn": check_in.isoformat(),
@@ -116,7 +132,7 @@ if st.button("🔍 Fetch prices"):
                 dataset = client.dataset(run["defaultDatasetId"])
                 items = list(dataset.iterate_items())
 
-                # Extract price per night from rooms[0].price.amount
+                # Extract price per night
                 if items and "rooms" in items[0] and items[0]["rooms"]:
                     total_price = items[0]["rooms"][0]["price"]["amount"]
                     price_per_night = round(total_price / nights, 2)
@@ -137,6 +153,8 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
+
 
 
 
