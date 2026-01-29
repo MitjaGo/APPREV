@@ -18,8 +18,8 @@ SHEET_URL = (
     f"{GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 )
 
-# ✅ CORRECT ACTOR
-APIFY_ACTOR = "apify/booking-com-hotel-scraper"
+# ✅ ACTOR YOU USE
+APIFY_ACTOR = "voyager/fast-booking-scraper"
 
 ROOM_MAPPING = {
     "double": {"adults": 2, "children": 0},
@@ -36,7 +36,7 @@ st.set_page_config(page_title="Booking.com Monitor", layout="wide")
 st.title("📊 Booking.com Group Price Monitor")
 
 # --------------------------------------------------
-# LOAD DATA
+# LOAD GOOGLE SHEET
 # --------------------------------------------------
 df = pd.read_csv(SHEET_URL)
 
@@ -66,13 +66,12 @@ if check_out <= check_in:
     st.stop()
 
 nights = (check_out - check_in).days
-
 group_df = df[df["group"] == group_selected]
 
 client = ApifyClient(APIFY_TOKEN)
 
 # --------------------------------------------------
-# FETCH
+# FETCH PRICES
 # --------------------------------------------------
 if st.button("🔍 Fetch prices"):
     results = []
@@ -91,12 +90,14 @@ if st.button("🔍 Fetch prices"):
                 adults = mapping["adults"]
                 children = mapping["children"]
 
+            # ✅ CORRECT INPUT FOR voyager/fast-booking-scraper
             run_input = {
-                "startUrls": [{"url": row["booking_url"]}],
+                "hotelUrls": [row["booking_url"]],
                 "checkIn": check_in.isoformat(),
                 "checkOut": check_out.isoformat(),
                 "adults": adults,
                 "children": children,
+                "rooms": 1,
                 "currency": "EUR",
                 "language": "en-gb"
             }
@@ -112,7 +113,7 @@ if st.button("🔍 Fetch prices"):
                 else:
                     price_per_night = None
 
-            except Exception:
+            except Exception as e:
                 price_per_night = None
 
             results.append({
@@ -125,6 +126,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
