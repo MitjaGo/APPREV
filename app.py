@@ -148,19 +148,23 @@ if st.button("🔍 Fetch prices"):
                 # -----------------------------
                 if items and len(items) > 0:
                     first_item = items[0]
-                    rooms = first_item.get("rooms", [])
-                    for room in rooms:
-                        guests = room.get("guests", 1)
-                        price_info = room.get("price")
-                        if price_info and "amount" in price_info:
-                            if row["property_category"] in ["apartment","mobile"]:
-                                # For apartments/mobile, take first price
-                                total_price = price_info["amount"]
-                                price_per_night = round(total_price / nights, 2)
-                                break
-                            elif guests == adults:
-                                total_price = price_info["amount"]
-                                price_per_night = round(total_price / nights, 2)
+                    room_options = first_item.get("roomOptions", [])
+                    for room in room_options:
+                        guests = room.get("b_max_persons", 1)
+                        if row["property_category"] in ["apartment","mobile"] or guests == adults:
+                            # Try different possible price fields
+                            price_fields = [
+                                room.get("b_avg_price_per_night_eur"),
+                                room.get("b_price_per_night"),
+                                room.get("b_raw_price")
+                            ]
+                            for p in price_fields:
+                                if p:
+                                    if isinstance(p, str):
+                                        p = p.replace("€","").replace(",","").strip()
+                                    price_per_night = round(float(p) / nights, 2)
+                                    break
+                            if price_per_night:
                                 break
 
             except Exception as e:
@@ -176,6 +180,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
