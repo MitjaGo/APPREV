@@ -46,15 +46,15 @@ for col in required_columns:
         st.error(f"Column missing in Google Sheet: {col}")
         st.stop()
 
-# Strip strings and clean
+# Clean data
 df["booking_url"] = df["booking_url"].astype(str).str.strip()
 df["property_category"] = df["property_category"].astype(str).str.lower().str.strip()
 df["nr_persons"] = pd.to_numeric(df["nr_persons"], errors="coerce")
-df = df.dropna(subset=["group", "booking_url", "property_category", "nr_persons"])
+df = df.dropna(subset=["group","booking_url","property_category","nr_persons"])
 df = df[df["booking_url"].str.startswith("http")]
 
 # -----------------------------
-# STREAMLIT SELECT GROUP
+# SELECT GROUP
 # -----------------------------
 available_groups = [num for num in GROUP_MAPPING if num in df["group"].unique()]
 group_selected_number = st.selectbox(
@@ -65,7 +65,9 @@ group_selected_number = st.selectbox(
 
 group_df = df[df["group"] == group_selected_number]
 
-# Date picker
+# -----------------------------
+# DATE PICKER
+# -----------------------------
 col1, col2 = st.columns(2)
 with col1:
     check_in = st.date_input("Check-in", date.today())
@@ -85,7 +87,7 @@ client = ApifyClient(APIFY_TOKEN)
 if st.button("🔍 Fetch prices"):
     results = []
 
-    with st.spinner("Fetching prices from Booking.com (this may take a few minutes)…"):
+    with st.spinner("Fetching prices from Booking.com (may take a few minutes)…"):
         for _, row in group_df.iterrows():
             # Determine adults/children based on category
             if row["property_category"] in ["apartment","mobile"]:
@@ -95,9 +97,9 @@ if st.button("🔍 Fetch prices"):
                 adults = int(row["nr_persons"])
                 children = 0
 
-            # Prepare correct actor input
+            # Correct actor input using startUrls
             run_input = {
-                "hotelUrls": [row["booking_url"]],
+                "startUrls": [{"url": row["booking_url"], "uniqueKey": row["property_name"]}],
                 "checkIn": check_in.isoformat(),
                 "checkOut": check_out.isoformat(),
                 "adults": adults,
@@ -114,7 +116,6 @@ if st.button("🔍 Fetch prices"):
                 dataset = client.dataset(run["defaultDatasetId"])
                 items = list(dataset.iterate_items())
 
-                # Extract price per night from rooms[0].price.amount
                 if items and "rooms" in items[0] and items[0]["rooms"]:
                     total_price = items[0]["rooms"][0]["price"]["amount"]
                     price_per_night = round(total_price / nights, 2)
@@ -135,6 +136,7 @@ if st.button("🔍 Fetch prices"):
 
     st.success("Finished")
     st.dataframe(pd.DataFrame(results), use_container_width=True)
+
 
 
 
